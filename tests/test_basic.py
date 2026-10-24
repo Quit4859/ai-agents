@@ -7,7 +7,7 @@ os.environ.setdefault("TAVILY_API_KEY", "test")
 from backend.services.search import SearchClient
 from backend.services.research import run_research
 from backend.schemas import ResearchRequest, Source
-from backend.services.verification import cross_check, validate_report
+from backend.services.verification import cross_check, validate_report, validate_report_sections
 from backend.export import to_markdown
 
 
@@ -133,6 +133,25 @@ def test_invalid_domain_rejected():
 def test_valid_domains_normalized():
     req = ResearchRequest(question="q", depth="quick", include_domains=["Example.COM "])
     assert req.include_domains == ["example.com"]
+
+
+def test_missing_sections_detected():
+    missing = validate_report_sections("Just a short report with no headings.")
+    assert "Executive summary" in missing
+    assert "Conclusion" in missing
+
+
+def test_complete_report_passes_section_check():
+    report = (
+        "# Executive summary\n\ntext\n\n"
+        "## Key findings\n\ntext\n\n"
+        "## Evidence and supporting sources\n\ntext\n\n"
+        "## Conflicting evidence or caveats\n\ntext\n\n"
+        "## What remains uncertain\n\ntext\n\n"
+        "## Conclusion\n\ntext\n\n"
+        "## Sources\n\ntext"
+    )
+    assert validate_report_sections(report) == []
 
 
 def test_extraction_flows_into_prompt():

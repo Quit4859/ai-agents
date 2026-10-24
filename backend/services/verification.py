@@ -4,6 +4,21 @@ import re
 MARKER_RE = re.compile(r"\[S\d+\]")
 
 
+REQUIRED_SECTIONS = [
+    "Executive summary",
+    "Key findings",
+    "Evidence and supporting sources",
+    "Conflicting evidence or caveats",
+    "What remains uncertain",
+    "Conclusion",
+    "Sources",
+]
+
+
+def _normalize(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
 def _find_markers(text):
     return set(MARKER_RE.findall(text))
 
@@ -58,6 +73,15 @@ def cross_check(report: str, sources, llm_client) -> list:
     return caveats
 
 
+def validate_report_sections(report: str) -> list:
+    text = _normalize(report)
+    missing = []
+    for section in REQUIRED_SECTIONS:
+        if _normalize(section) not in text:
+            missing.append(section)
+    return missing
+
+
 def validate_report(report: str, valid_ids: set[str]):
     markers = _find_markers(report)
     valid = {v.strip("[]") for v in valid_ids}
@@ -69,4 +93,7 @@ def validate_report(report: str, valid_ids: set[str]):
         caveats.append(f"Removed unknown source markers: {', '.join(sorted(invalid))}.")
     if "conflict" not in report.lower() and "caveat" not in report.lower() and "uncertain" not in report.lower():
         caveats.append("Report did not explicitly discuss conflicts or uncertainty.")
+    missing_sections = validate_report_sections(report)
+    if missing_sections:
+        caveats.append(f"Report was missing expected sections: {', '.join(missing_sections)}.")
     return report, caveats
