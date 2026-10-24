@@ -72,10 +72,11 @@ def run_research(request, search_client=None, llm_client=None):
         raise RuntimeError(f"LLM request failed: {e}")
 
     # verification
-    from backend.services.verification import validate_report
+    from backend.services.verification import cross_check, validate_report
 
     report, caveats = validate_report(report, {s.id for s in sources})
-    caveats = ["Some sources may be represented by search snippets rather than full-page text."] + caveats
+    cross_caveats = cross_check(report, sources, llm_client)
+    caveats = ["Some sources may be represented by search snippets rather than full-page text."] + cross_caveats + caveats
     return {
         "question": request.question,
         "report_markdown": report,

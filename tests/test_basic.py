@@ -5,8 +5,8 @@ os.environ.setdefault("TAVILY_API_KEY", "test")
 
 from backend.services.search import SearchClient
 from backend.services.research import run_research
-from backend.schemas import ResearchRequest
-from backend.services.verification import validate_report
+from backend.schemas import ResearchRequest, Source
+from backend.services.verification import cross_check, validate_report
 from backend.export import to_markdown
 
 
@@ -89,3 +89,30 @@ def test_provider_timeout():
         assert "failed" in str(e).lower()
     else:
         raise AssertionError("Expected RuntimeError when the provider times out")
+
+
+def test_cross_check_conflict():
+    srcs = [Source(id="S1", title="A", url="https://x.com/a", domain="x.com", snippet="s")]
+    class FakeLLM:
+        def complete(self, p):
+            return '[{"type": "conflict", "detail": "Sources disagree on the claim."}]'
+    caveats = cross_check("Report [S1]", srcs, FakeLLM())
+    assert any("conflict" in c.lower() for c in caveats)
+
+
+def test_cross_check_single_source():
+    srcs = [Source(id="S1", title="A", url="https://x.com/a", domain="x.com", snippet="s")]
+    class FakeLLM:
+        def complete(self, p):
+            return '[{"type": "single_source", "detail": "Only one source supports this claim."}]'
+    caveats = cross_check("Report [S1]", srcs, FakeLLM())
+    assert any("single_source" in c or "single source" in c.lower() for c in caveats)
+
+
+def test_cross_check_no_issues():
+    srcs = [Source(id="S1", title="A", url="https://x.com/a", domain="x.com", snippet="s")]
+    class FakeLLM:
+        def complete(self, p):
+            return "[]"
+    caveats = cross_check("Report [S1]", srcs, FakeLLM())
+    assert any("no single-source" in c.lower() for c in caveats)
