@@ -82,5 +82,6 @@ def run_research(request, search_client=None, llm_client=None):
         "sources": sources,
         "caveats": caveats,
         "model_id": settings.nebius_model_id,
+        "search_provider": "tavily",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
