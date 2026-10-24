@@ -2,13 +2,15 @@ from datetime import datetime, timezone
 
 from backend.config import DEPTH_LIMITS, settings
 from backend.schemas import Source
+from backend.services.extractor import ContentExtractor, TavilyContentExtractor
 from backend.services.llm import LLMClient
 from backend.services.search import SearchClient
 
 
 def _build_prompt(question, sources, depth):
     src_block = "\n".join(
-        f"[{s['id']}] {s['title']} - {s['url']}\nSnippet: {s['snippet']}" for s in sources
+        f"[{s['id']}] {s['title']} - {s['url']}\nContent: {s.get('full_text') or s.get('snippet') or ''}\nSnippet: {s.get('snippet') or ''}"
+        for s in sources
     )
     return (
         "You are a research assistant. Use ONLY the provided sources. "
@@ -22,9 +24,10 @@ def _build_prompt(question, sources, depth):
     )
 
 
-def run_research(request, search_client=None, llm_client=None):
+def run_research(request, search_client=None, llm_client=None, extractor=None):
     search_client = search_client or SearchClient()
     llm_client = llm_client or LLMClient()
+    extractor = extractor or TavilyContentExtractor()
     limit = DEPTH_LIMITS.get(request.depth, DEPTH_LIMITS["standard"])
     try:
         raw = search_client.search(
@@ -46,7 +49,7 @@ def run_research(request, search_client=None, llm_client=None):
     raw = deduped[:limit]
     sources_data = []
     for i, r in enumerate(raw, start=1):
-        sources_data.append({"id": f"S{i}", **r})
+        sources_data.append({"id": f"S{i}", **r, "full_text": extractor.extract(r)})
     sources = [Source(**{k: v for k, v in s.items() if k in Source.model_fields}) for s in sources_data]
     # keep id mapping
     for src, sd in zip(sources, sources_data):

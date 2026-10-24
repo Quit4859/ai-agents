@@ -10,6 +10,11 @@ from backend.services.verification import cross_check, validate_report
 from backend.export import to_markdown
 
 
+class FakeExtractor:
+    def extract(self, source):
+        return source.get("snippet") or ""
+
+
 def test_dedup():
     class FakeSearch:
         def search(self, query, max_results, include_domains=None, exclude_domains=None):
@@ -21,7 +26,7 @@ def test_dedup():
         def complete(self, prompt):
             return "Report [S1]"
     req = ResearchRequest(question="q", depth="quick")
-    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM())
+    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM(), extractor=FakeExtractor())
     assert len(res["sources"]) == 1
 
 
@@ -33,7 +38,7 @@ def test_empty_results():
         def complete(self, p):
             return "x"
     req = ResearchRequest(question="q", depth="quick")
-    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM())
+    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM(), extractor=FakeExtractor())
     assert "No sources" in res["report_markdown"]
     assert res["caveats"]
 
@@ -52,7 +57,7 @@ def test_malformed_model_output():
         def complete(self, p):
             return "No markers here"
     req = ResearchRequest(question="q", depth="quick")
-    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM())
+    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM(), extractor=FakeExtractor())
     assert res["report_markdown"]
 
 
@@ -65,7 +70,7 @@ def test_injection_handling():
             assert "Ignore previous instructions" in p
             return "Safe [S1]"
     req = ResearchRequest(question="q", depth="quick")
-    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM())
+    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM(), extractor=FakeExtractor())
     assert "[S1]" in res["report_markdown"]
 
 
@@ -116,3 +121,34 @@ def test_cross_check_no_issues():
             return "[]"
     caveats = cross_check("Report [S1]", srcs, FakeLLM())
     assert any("no single-source" in c.lower() for c in caveats)
+
+
+def test_extraction_flows_into_prompt():
+    prompts = []
+    class FakeSearch:
+        def search(self, *a, **k):
+            return [{"title": "A", "url": "https://x.com/a", "domain": "x.com", "snippet": "snippet text"}]
+    class FakeLLM:
+        def complete(self, p):
+            prompts.append(p)
+            return "Safe [S1]"
+    class FakeExtractor:
+        def extract(self, source):
+            return "full page text here"
+    req = ResearchRequest(question="q", depth="quick")
+    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM(), extractor=FakeExtractor())
+    assert any("full page text here" in p for p in prompts)
+
+
+def test_extraction_falls_back_to_snippet():
+    prompts = []
+    class FakeSearch:
+        def search(self, *a, **k):
+            return [{"title": "A", "url": "https://x.com/a", "domain": "x.com", "snippet": "snippet text"}]
+    class FakeLLM:
+        def complete(self, p):
+            prompts.append(p)
+            return "Safe [S1]"
+    req = ResearchRequest(question="q", depth="quick")
+    res = run_research(req, search_client=FakeSearch(), llm_client=FakeLLM(), extractor=FakeExtractor())
+    assert any("snippet text" in p for p in prompts)
