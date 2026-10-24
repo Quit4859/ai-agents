@@ -1,4 +1,5 @@
 import os
+import pytest
 os.environ.setdefault("NEBIUS_API_KEY", "test")
 os.environ.setdefault("NEBIUS_MODEL_ID", "test-model")
 os.environ.setdefault("TAVILY_API_KEY", "test")
@@ -121,6 +122,17 @@ def test_cross_check_no_issues():
             return "[]"
     caveats = cross_check("Report [S1]", srcs, FakeLLM())
     assert any("no single-source" in c.lower() for c in caveats)
+
+
+def test_invalid_domain_rejected():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        ResearchRequest(question="q", depth="quick", include_domains=["https://bad.com/path"])
+
+
+def test_valid_domains_normalized():
+    req = ResearchRequest(question="q", depth="quick", include_domains=["Example.COM "])
+    assert req.include_domains == ["example.com"]
 
 
 def test_extraction_flows_into_prompt():
